@@ -1,5 +1,9 @@
+.venv/
+segredos.env
+state.json
+diagnostico.json
+log.txt
+log-anterior.txt
 debug/
 __pycache__/
 *.pyc
-.venv/
-.env

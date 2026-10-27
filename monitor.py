@@ -2,7 +2,7 @@
 """
 Alerta de preço do Samsung Galaxy S26+ com aviso no Telegram.
 
-Roda a cada hora pelo GitHub Actions. Para cada loja configurada em config.json:
+Roda a cada hora pelo Agendador de Tarefas do Windows. Para cada loja configurada em config.json:
   1. encontra os anúncios do S26+ (páginas conhecidas + busca na loja);
   2. aplica os filtros (modelo, armazenamento, cor, aparelho novo, vendedor oficial);
   3. avisa no Telegram quando algum anúncio válido fica abaixo do preço máximo.
@@ -11,7 +11,7 @@ O estado (o que já foi avisado e a saúde de cada loja) fica em state.json,
 para não repetir o mesmo alerta toda hora.
 
 Os segredos (token e chat do Telegram) só são lidos de variáveis de ambiente
-e nunca são impressos nos logs.
+(ou do arquivo local segredos.env) e nunca são impressos nos logs.
 """
 
 from __future__ import annotations
@@ -150,7 +150,7 @@ SINAIS_BLOQUEIO = [
 
 
 def parece_bloqueio(html: str, url_final: str) -> bool:
-    if "account-verification" in url_final:
+    if "account-verification" in url_final or "/captcha" in url_final:
         return True
     cabeca = norm(html[:20000])
     if len(html) < 60000:
@@ -593,11 +593,24 @@ LOJAS = {
 # --------------------------------------------------------------------------- #
 
 
+def segredos() -> tuple[str, str]:
+    """Lê o token e o chat do Telegram das variáveis de ambiente ou do arquivo segredos.env."""
+    valores = {"TELEGRAM_BOT_TOKEN": os.getenv("TELEGRAM_BOT_TOKEN", ""),
+               "TELEGRAM_CHAT_ID": os.getenv("TELEGRAM_CHAT_ID", "")}
+    arq = ROOT / "segredos.env"
+    if arq.exists():
+        for linha in arq.read_text(encoding="utf-8-sig").splitlines():
+            if "=" in linha and not linha.lstrip().startswith("#"):
+                k, v = linha.split("=", 1)
+                if k.strip() in valores and not valores[k.strip()]:
+                    valores[k.strip()] = v.strip().strip('"')
+    return valores["TELEGRAM_BOT_TOKEN"].strip(), valores["TELEGRAM_CHAT_ID"].strip()
+
+
 def telegram(texto: str) -> bool:
-    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-    chat = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+    token, chat = segredos()
     if not token or not chat:
-        print("::warning::TELEGRAM_BOT_TOKEN ou TELEGRAM_CHAT_ID não configurados; mensagem não enviada.")
+        print("AVISO: token ou chat do Telegram não configurados (rode o instalar.bat); mensagem não enviada.")
         return False
     ok = True
     partes, atual = [], ""
@@ -614,10 +627,10 @@ def telegram(texto: str) -> bool:
             })
             if r.status_code != 200:
                 # O corpo da resposta do Telegram não contém o token.
-                print(f"::error::Telegram respondeu {r.status_code}: {r.text[:300]}")
+                print(f"ERRO: Telegram respondeu {r.status_code}: {r.text[:300]}")
                 ok = False
         except Exception as e:  # nunca imprime str(e): pode conter a URL com o token
-            print(f"::error::Falha ao falar com o Telegram ({type(e).__name__}).")
+            print(f"ERRO: falha ao falar com o Telegram ({type(e).__name__}).")
             ok = False
     return ok
 
@@ -752,9 +765,7 @@ def main() -> None:
         (ROOT / "diagnostico.json").write_text(json.dumps(DIAGNOSTICO, ensure_ascii=False, indent=1) + "\n",
                                               encoding="utf-8")
 
-    # Atualiza um marcador semanal para manter o repositório ativo
-    # (o GitHub pausa agendamentos de repositórios públicos parados por 60 dias).
-    estado["semana"] = agora.strftime("%G-W%V")
+    estado["ultima_execucao"] = agora.isoformat(timespec="minutes")
     STATE_PATH.write_text(json.dumps(estado, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
                           encoding="utf-8")
     print(f"\nAlertas enviados: {len(alertas)}")
