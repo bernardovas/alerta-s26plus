@@ -1,9 +1,10 @@
 {
   "produto": "Samsung Galaxy S26+",
   "preco_maximo": 4900,
+  "intervalo_horas": 2,
   "armazenamentos_aceitos": ["256GB", "512GB"],
   "cores_excluidas": ["branco", "branca", "rosa", "rose", "white", "pink"],
-  "avisar_falha_apos_execucoes": 6,
+  "avisar_falha_apos_execucoes": 3,
 
   "lojas": {
     "amazon": {

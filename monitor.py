@@ -705,6 +705,39 @@ def telegram(texto: str) -> bool:
     return ok
 
 
+def msg_resumo(agora: datetime, resumo: list, ofertas: list) -> str:
+    """Mensagem enviada a cada execução: ofertas abaixo do limite em destaque + menor preço de cada loja."""
+    titulo = "🧪 <b>Teste do alerta" if TEST_MODE else "📊 <b>Preços do"
+    linhas = [f"{titulo} {escape(CONFIG['produto'])}</b>",
+              f"Limite: {fmt_brl(LIMITE)} · {agora:%d/%m %H:%M}", ""]
+
+    if ofertas:
+        linhas += [f"🔥🔥🔥 <b>OFERTA ABAIXO DE {fmt_brl(LIMITE)}!</b> 🔥🔥🔥", ""]
+        for a, nome in ofertas:
+            linhas.append(f"🏬 <b>{escape(nome)}</b>: <b><u>{fmt_brl(a['preco'])}</u></b> {escape(a['preco_desc'])} · "
+                          f"{escape(a['cor'] or 'cor ?')} · {escape(a['armazenamento'] or '?')}")
+            if not a["cor"]:
+                linhas.append("    ⚠️ <i>A loja não informa a cor. Confira se não é branco ou rosa.</i>")
+            linhas.append(f"    👉 {escape(a['url'])}")
+        linhas += ["", "━━━━━━━━━━━━━━━", ""]
+
+    for nome, n_s26, n_ok, menor, erros in resumo:
+        if n_s26:
+            linhas.append(f"✅ <b>{escape(nome)}</b>: {n_s26} anúncio(s) do S26+ lidos, {n_ok} dentro das regras")
+            if menor:
+                fogo = " 🔥" if menor["preco"] < LIMITE else ""
+                linhas.append(f"    ↳ menor: <b>{fmt_brl(menor['preco'])}</b> {escape(menor['preco_desc'])} · "
+                              f"{escape(menor['cor'] or 'cor ?')} · {escape(menor['armazenamento'] or '?')}{fogo}\n"
+                              f"    {escape(menor['url'])}")
+        else:
+            linhas.append(f"❌ <b>{escape(nome)}</b>: não consegui ler"
+                          + (f" ({escape(erros[0][:80])})" if erros else ""))
+
+    linhas += ["", f"🔥 Ofertas abaixo do limite: {len(ofertas)}" if ofertas
+               else f"Nenhuma oferta abaixo de {fmt_brl(LIMITE)} por enquanto."]
+    return "\n".join(linhas)
+
+
 def msg_alerta(a: dict, nome_loja: str) -> str:
     linhas = [
         f"🔔 <b>{escape(CONFIG['produto'])} abaixo de {fmt_brl(LIMITE)}!</b>",
@@ -748,7 +781,7 @@ def _executar(agora: datetime) -> None:
     limite_falhas = int(CONFIG.get("avisar_falha_apos_execucoes", 6))
 
     resumo = []
-    alertas = []
+    ofertas = []
 
     for loja, fn in LOJAS.items():
         cfg = CONFIG["lojas"].get(loja) or {}
@@ -810,34 +843,11 @@ def _executar(agora: datetime) -> None:
         resumo.append((nome, len(s26), len(validos), menor, erros))
 
         for a in validos:
-            if a["preco"] >= LIMITE:
-                estado["avisados"].pop(a["chave"], None)
-                continue
-            anterior = estado["avisados"].get(a["chave"])
-            if anterior is None or a["preco"] <= anterior - 1:
-                alertas.append((a, nome))
+            if a["preco"] < LIMITE:
+                ofertas.append((a, nome))
 
-    for a, nome in alertas:
-        if telegram(msg_alerta(a, nome)):
-            estado["avisados"][a["chave"]] = a["preco"]
-
-    if TEST_MODE:
-        linhas = [f"🧪 <b>Teste do alerta {escape(CONFIG['produto'])}</b>",
-                  f"Limite: {fmt_brl(LIMITE)} · {agora:%d/%m %H:%M}", ""]
-        for nome, n_s26, n_ok, menor, erros in resumo:
-            if n_s26:
-                det = f"{n_s26} anúncio(s) do S26+ lidos, {n_ok} dentro das regras"
-                linhas.append(f"✅ <b>{escape(nome)}</b>: {det}")
-                if menor:
-                    linhas.append(f"    ↳ menor: <b>{fmt_brl(menor['preco'])}</b> {escape(menor['preco_desc'])} · "
-                                  f"{escape(menor['cor'] or 'cor ?')} · {escape(menor['armazenamento'] or '?')}\n"
-                                  f"    {escape(menor['url'])}")
-            else:
-                linhas.append(f"❌ <b>{escape(nome)}</b>: não consegui ler"
-                              + (f" ({escape(erros[0][:80])})" if erros else ""))
-        linhas += ["", f"Alertas enviados agora: {len(alertas)}",
-                   "Se você recebeu esta mensagem, o Telegram está funcionando."]
-        telegram("\n".join(linhas))
+    ofertas.sort(key=lambda x: x[0]["preco"])
+    enviado = telegram(msg_resumo(agora, resumo, ofertas))
 
     if TEST_MODE:
         (ROOT / "diagnostico.json").write_text(json.dumps(DIAGNOSTICO, ensure_ascii=False, indent=1) + "\n",
@@ -846,7 +856,7 @@ def _executar(agora: datetime) -> None:
     estado["ultima_execucao"] = agora.isoformat(timespec="minutes")
     STATE_PATH.write_text(json.dumps(estado, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
                           encoding="utf-8")
-    print(f"\nAlertas enviados: {len(alertas)}")
+    print(f"\nOfertas abaixo do limite: {len(ofertas)} · resumo enviado: {enviado}")
 
 
 if __name__ == "__main__":

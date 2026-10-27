@@ -1,6 +1,6 @@
 # Alerta de preço — Galaxy S26+ (Windows)
 
-Robô que verifica a cada hora o preço do **Samsung Galaxy S26+** na Amazon, Magazine Luiza, Mercado Livre e Casas Bahia, e avisa no **Telegram** quando aparece um anúncio abaixo de **R$ 4.900**. Roda no seu PC pelo Agendador de Tarefas do Windows (as lojas bloqueiam os servidores do GitHub).
+Robô que verifica a cada 2 horas o preço do **Samsung Galaxy S26+** na Amazon, Magazine Luiza, Mercado Livre e Casas Bahia, e manda no **Telegram** um resumo com o menor preço de cada loja. Anúncios abaixo de **R$ 4.900** aparecem em destaque no topo da mensagem. Roda no seu PC pelo Agendador de Tarefas do Windows (as lojas bloqueiam os servidores do GitHub).
 
 ## Instalação
 
@@ -28,7 +28,7 @@ Só gera alerta se o anúncio atender a **todas**:
 - vendido pela Samsung ou pela própria loja (Amazon, Magalu, Casas Bahia); no Mercado Livre, só a loja oficial Samsung;
 - menor preço exibido (Pix ou cartão) abaixo do limite.
 
-O mesmo anúncio só é avisado de novo se o preço cair mais, ou se subir acima do limite e voltar a cair. Se uma loja ficar 6 verificações seguidas sem poder ser lida, chega um aviso no Telegram (e outro quando voltar).
+Para mudar a frequência, altere `intervalo_horas` no `config.json` e rode o `instalar.bat` de novo. Se uma loja ficar 3 verificações seguidas sem poder ser lida, chega um aviso no Telegram (e outro quando voltar).
 
 ## Segurança
 

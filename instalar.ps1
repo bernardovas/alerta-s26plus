@@ -88,10 +88,13 @@ try {
     }
 
     # 4) Agendamento -------------------------------------------------------------
-    Titulo "Agendando a verificação a cada 1 hora"
+    $Horas = 2
+    try { $Horas = [int]((Get-Content (Join-Path $Pasta "config.json") -Raw -Encoding UTF8 | ConvertFrom-Json).intervalo_horas) } catch { }
+    if ($Horas -lt 1) { $Horas = 2 }
+    Titulo "Agendando a verificação a cada $Horas hora(s)"
     $pyw = Join-Path $Pasta ".venv\Scripts\pythonw.exe"
     $acao = New-ScheduledTaskAction -Execute $pyw -Argument "`"$Pasta\executar.pyw`"" -WorkingDirectory $Pasta
-    $gatilho = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(2) -RepetitionInterval (New-TimeSpan -Hours 1)
+    $gatilho = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(15) -RepetitionInterval (New-TimeSpan -Hours $Horas)
     $config = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
         -ExecutionTimeLimit (New-TimeSpan -Minutes 15) -MultipleInstances IgnoreNew
     Register-ScheduledTask -TaskName $NomeTarefa -Action $acao -Trigger $gatilho -Settings $config `
