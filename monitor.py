@@ -160,15 +160,24 @@ def parece_bloqueio(html: str, url_final: str) -> bool:
 
 
 _contador_debug = 0
+DIAGNOSTICO: list[dict] = []
 
 
 def baixar(url: str, loja: str) -> tuple[int, str, str]:
     """Retorna (status, html, url_final). Lança Bloqueado em caso de bloqueio."""
     global _contador_debug
     time.sleep(random.uniform(1.5, 3.5))
-    r = SESSION.get(url, headers=HEADERS, timeout=45, allow_redirects=True)
+    try:
+        r = SESSION.get(url, headers=HEADERS, timeout=45, allow_redirects=True)
+    except Exception as e:
+        DIAGNOSTICO.append({"loja": loja, "url": url[:150], "erro": f"{type(e).__name__}: {e}"[:300]})
+        raise Bloqueado(f"falha de conexão ({type(e).__name__})") from None
     html = r.text or ""
     final = str(r.url)
+    t = re.search(r"<title[^>]*>(.*?)</title>", html, re.S | re.I)
+    DIAGNOSTICO.append({"loja": loja, "url": url[:150], "final": final[:150], "status": r.status_code,
+                        "tamanho": len(html), "titulo": (t.group(1).strip()[:120] if t else ""),
+                        "bloqueio": parece_bloqueio(html, final)})
     if DEBUG_HTML:
         DEBUG_DIR.mkdir(exist_ok=True)
         _contador_debug += 1
@@ -686,6 +695,10 @@ def main() -> None:
                 del estado["avisados"][a["chave"]]  # deixou de valer: pode avisar de novo no futuro
         for e in erros:
             print(f"  !! {e}")
+        DIAGNOSTICO.append({"loja": loja, "resumo": {"anuncios": len(anuncios), "erros": erros[:5],
+                            "itens": [{"titulo": a["titulo"][:90], "preco": a["preco"], "vendedor": a["vendedor"][:40],
+                                       "cor": a["cor"], "motivo": avaliar(a, cfg.get("vendedores_aceitos", [])) or "válido"}
+                                      for a in anuncios[:25]]}})
 
         # Saúde da loja: sem nenhum anúncio do S26+ lido = falha (bloqueio ou página mudou).
         saude = estado["lojas"].setdefault(loja, {"falhas_seguidas": 0, "avisado": False})
@@ -734,6 +747,10 @@ def main() -> None:
         linhas += ["", f"Alertas enviados agora: {len(alertas)}",
                    "Se você recebeu esta mensagem, o Telegram está funcionando."]
         telegram("\n".join(linhas))
+
+    if TEST_MODE:
+        (ROOT / "diagnostico.json").write_text(json.dumps(DIAGNOSTICO, ensure_ascii=False, indent=1) + "\n",
+                                              encoding="utf-8")
 
     # Atualiza um marcador semanal para manter o repositório ativo
     # (o GitHub pausa agendamentos de repositórios públicos parados por 60 dias).

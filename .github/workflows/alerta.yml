@@ -50,6 +50,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add state.json
+          [ -f diagnostico.json ] && git add diagnostico.json
           if ! git diff --cached --quiet; then
             git commit -m "Atualiza estado do alerta"
             git pull --rebase --quiet
