@@ -1,0 +1,61 @@
+{
+  "produto": "Samsung Galaxy S26+",
+  "preco_maximo": 4900,
+  "armazenamentos_aceitos": ["256GB", "512GB"],
+  "cores_excluidas": ["branco", "branca", "rosa", "rose", "white", "pink"],
+  "avisar_falha_apos_execucoes": 6,
+
+  "lojas": {
+    "amazon": {
+      "ativo": true,
+      "nome": "Amazon",
+      "vendedores_aceitos": ["samsung", "amazon"],
+      "asins_semente": [
+        "B0GKQT7HPX",
+        "B0GKQX8ZPN",
+        "B0GKR2PFSY",
+        "B0GKR1T5Q1",
+        "B0GKQJM8QX",
+        "B0GKQYKBQ9",
+        "B0GQD446QS"
+      ]
+    },
+
+    "magalu": {
+      "ativo": true,
+      "nome": "Magazine Luiza",
+      "vendedores_aceitos": ["samsung", "magazineluiza"],
+      "buscas": ["galaxy s26+", "galaxy s26 plus"],
+      "paths_semente": [
+        "/celular-samsung-galaxy-s26-5g-256gb-12gb-ram-galaxy-ai-camera-tripla-de-50-12-10-tela-de-6-7/p/haj47ha11f/te/g26p/",
+        "/celular-samsung-galaxy-s26-5g-512gb-12gb-ram-galaxy-ai-camera-tripla-de-50-12-10-tela-de-6-7/p/adk1c1bk4a/te/g26p/"
+      ]
+    },
+
+    "mercadolivre": {
+      "ativo": true,
+      "nome": "Mercado Livre",
+      "vendedores_aceitos": ["samsung"],
+      "buscas": [
+        "https://lista.mercadolivre.com.br/galaxy-s26-plus_Loja_samsung",
+        "https://lista.mercadolivre.com.br/galaxy-s26%2B_Loja_samsung"
+      ],
+      "urls_semente": [
+        "https://www.mercadolivre.com.br/p/MLB65981406"
+      ]
+    },
+
+    "casasbahia": {
+      "ativo": true,
+      "nome": "Casas Bahia",
+      "vendedores_aceitos": ["samsung", "casas bahia", "casasbahia"],
+      "buscas": [
+        "https://www.casasbahia.com.br/galaxy-s26-plus/b",
+        "https://www.casasbahia.com.br/samsung-galaxy-s26/b"
+      ],
+      "urls_semente": [
+        "https://www.casasbahia.com.br/smartphone-samsung-galaxy-s26-5g-tela-6-7-256gb-camera-50mp/p/55072183"
+      ]
+    }
+  }
+}

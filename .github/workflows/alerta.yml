@@ -1,0 +1,66 @@
+name: Alerta S26+
+
+on:
+  schedule:
+    # A cada hora, no minuto 17 (horários "redondos" atrasam mais no GitHub).
+    - cron: "17 * * * *"
+  workflow_dispatch:
+    inputs:
+      teste:
+        description: "Enviar um resumo de teste no Telegram"
+        type: boolean
+        default: true
+      salvar_paginas:
+        description: "Salvar as páginas baixadas (diagnóstico)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: alerta-s26plus
+  cancel-in-progress: false
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Verificar preços
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TEST_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.teste && '1' || '0' }}
+          DEBUG_HTML: ${{ github.event_name == 'workflow_dispatch' && inputs.salvar_paginas && '1' || '0' }}
+        run: python monitor.py
+
+      - name: Salvar estado
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Atualiza estado do alerta"
+            git pull --rebase --quiet
+            git push
+          fi
+
+      - name: Guardar páginas baixadas
+        if: github.event_name == 'workflow_dispatch' && inputs.salvar_paginas
+        uses: actions/upload-artifact@v4
+        with:
+          name: paginas-baixadas
+          path: debug/
+          retention-days: 3
+          if-no-files-found: ignore
