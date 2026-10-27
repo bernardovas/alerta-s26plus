@@ -7,3 +7,4 @@ log-anterior.txt
 debug/
 __pycache__/
 *.pyc
+perfil-navegador/

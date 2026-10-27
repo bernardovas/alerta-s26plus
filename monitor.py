@@ -138,8 +138,52 @@ class Bloqueado(Exception):
     """A loja respondeu com captcha, verificação ou bloqueio."""
 
 
-SESSION = creq.Session(impersonate="chrome")
-HEADERS = {"Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.6,en;q=0.5"}
+# As lojas bloqueiam clientes HTTP simples; por isso as páginas são abertas
+# num navegador de verdade (o Microsoft Edge do Windows) controlado pelo Playwright.
+_PW = None
+_CTX = None
+
+
+def _contexto():
+    global _PW, _CTX
+    if _CTX is not None:
+        return _CTX
+    from playwright.sync_api import sync_playwright
+
+    _PW = sync_playwright().start()
+    oculto = os.getenv("NAVEGADOR_HEADLESS") == "1" or CONFIG.get("navegador_modo") == "headless"
+    args = ["--disable-blink-features=AutomationControlled", "--window-size=1366,900"]
+    if not oculto:
+        # Janela real, mas posicionada fora da tela para não atrapalhar.
+        args += ["--window-position=-32000,-32000"]
+    base = dict(user_data_dir=str(ROOT / "perfil-navegador"), headless=oculto, locale="pt-BR",
+                timezone_id="America/Sao_Paulo", viewport={"width": 1366, "height": 900},
+                ignore_default_args=["--enable-automation"], args=args)
+    ultimo_erro = None
+    for canal in [CONFIG.get("navegador", "msedge"), "chrome", None]:
+        try:
+            kw = dict(base)
+            if canal:
+                kw["channel"] = canal
+            _CTX = _PW.chromium.launch_persistent_context(**kw)
+            print(f"Navegador: {canal or 'chromium'}")
+            return _CTX
+        except Exception as e:
+            ultimo_erro = e
+    raise RuntimeError(f"não consegui abrir o navegador: {ultimo_erro}")
+
+
+def fechar_navegador() -> None:
+    global _PW, _CTX
+    try:
+        if _CTX is not None:
+            _CTX.close()
+        if _PW is not None:
+            _PW.stop()
+    except Exception:
+        pass
+    _PW = _CTX = None
+
 
 SINAIS_BLOQUEIO = [
     "/errors/validatecaptcha", "digite os caracteres que voce ve", "api-services-support@amazon",
@@ -164,29 +208,41 @@ DIAGNOSTICO: list[dict] = []
 
 
 def baixar(url: str, loja: str) -> tuple[int, str, str]:
-    """Retorna (status, html, url_final). Lança Bloqueado em caso de bloqueio."""
+    """Abre a página no navegador. Retorna (status, html, url_final). Lança Bloqueado se bloqueada."""
     global _contador_debug
-    time.sleep(random.uniform(1.5, 3.5))
+    ctx = _contexto()
+    pagina = ctx.pages[0] if ctx.pages else ctx.new_page()
+    time.sleep(random.uniform(2.0, 4.5))
     try:
-        r = SESSION.get(url, headers=HEADERS, timeout=45, allow_redirects=True)
+        resp = pagina.goto(url, wait_until="domcontentloaded", timeout=45000)
     except Exception as e:
         DIAGNOSTICO.append({"loja": loja, "url": url[:150], "erro": f"{type(e).__name__}: {e}"[:300]})
-        raise Bloqueado(f"falha de conexão ({type(e).__name__})") from None
-    html = r.text or ""
-    final = str(r.url)
+        raise Bloqueado(f"página não carregou ({type(e).__name__})") from None
+    status = resp.status if resp else 0
+    try:
+        pagina.wait_for_load_state("networkidle", timeout=10000)
+    except Exception:
+        pass
+    html = pagina.content()
+    # Algumas lojas mostram uma verificação rápida e depois recarregam sozinhas.
+    if (status in (403, 429, 503) or parece_bloqueio(html, pagina.url)) and "__NEXT_DATA__" not in html:
+        pagina.wait_for_timeout(8000)
+        html = pagina.content()
+    final = pagina.url
     t = re.search(r"<title[^>]*>(.*?)</title>", html, re.S | re.I)
-    DIAGNOSTICO.append({"loja": loja, "url": url[:150], "final": final[:150], "status": r.status_code,
+    pronto = "__NEXT_DATA__" in html or "productTitle" in html or len(html) > 150000
+    bloqueado = parece_bloqueio(html, final) or (status in (403, 429, 503) and not pronto)
+    DIAGNOSTICO.append({"loja": loja, "url": url[:150], "final": final[:150], "status": status,
                         "tamanho": len(html), "titulo": (t.group(1).strip()[:120] if t else ""),
-                        "bloqueio": parece_bloqueio(html, final)})
+                        "bloqueio": bloqueado})
     if DEBUG_HTML:
         DEBUG_DIR.mkdir(exist_ok=True)
         _contador_debug += 1
-        (DEBUG_DIR / f"{loja}_{_contador_debug:02d}_{r.status_code}.html").write_text(
-            f"<!-- {url} -> {final} -->\n" + html, encoding="utf-8"
-        )
-    if r.status_code in (403, 429, 503) or parece_bloqueio(html, final):
-        raise Bloqueado(f"HTTP {r.status_code} em {final[:120]}")
-    return r.status_code, html, final
+        (DEBUG_DIR / f"{loja}_{_contador_debug:02d}_{status}.html").write_text(
+            f"<!-- {url} -> {final} -->\n" + html, encoding="utf-8")
+    if bloqueado:
+        raise Bloqueado(f"bloqueio (HTTP {status}) em {final[:120]}")
+    return (200 if pronto and status >= 400 else status), html, final
 
 
 def next_data(html: str) -> dict | None:
@@ -665,7 +721,13 @@ def carregar_estado() -> dict:
 
 
 def main() -> None:
-    agora = datetime.now(BRT)
+    try:
+        _executar(datetime.now(BRT))
+    finally:
+        fechar_navegador()
+
+
+def _executar(agora: datetime) -> None:
     estado = carregar_estado()
     estado.setdefault("avisados", {})
     estado.setdefault("lojas", {})
