@@ -1,4 +1,22 @@
 {
   "avisados": {},
-  "lojas": {}
+  "lojas": {
+    "amazon": {
+      "avisado": false,
+      "falhas_seguidas": 1
+    },
+    "casasbahia": {
+      "avisado": false,
+      "falhas_seguidas": 1
+    },
+    "magalu": {
+      "avisado": false,
+      "falhas_seguidas": 1
+    },
+    "mercadolivre": {
+      "avisado": false,
+      "falhas_seguidas": 1
+    }
+  },
+  "semana": "2026-W44"
 }
