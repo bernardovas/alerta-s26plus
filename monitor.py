@@ -307,7 +307,8 @@ def avaliar(a: dict, vendedores_ok: list[str]) -> str | None:
         return "sem estoque"
     if a["armazenamento"] and a["armazenamento"].upper() not in ARMAZ_OK:
         return f"armazenamento {a['armazenamento']}"
-    texto = norm(" ".join([a["titulo"], a["cor"] or "", a["condicao"]]))
+    titulo_cel = a["titulo"].split(" + ")[0]  # em kits, ignora a cor do acessório
+    texto = norm(" ".join([titulo_cel, a["cor"] or "", a["condicao"]]))
     if RX_COR_EXCLUIDA.search(texto):
         return "cor excluída"
     for rx in RX_NAO_NOVO_TITULO:
@@ -402,16 +403,25 @@ def _amazon_pagina(html: str, asin: str, cor_hint, arm_hint) -> dict:
             break
 
     vendedor = ""
-    for sel in ['[offer-display-feature-name="desktop-merchant-info"]',
-                "#merchantInfoFeature_feature_div", "#merchant-info", "#sellerProfileTriggerId"]:
+    blocos = []
+    for sel in ["#merchantInfoFeature_feature_div", "#tabular-buybox", "#offerDisplayFeatures_desktop",
+                '[offer-display-feature-name="desktop-merchant-info"]', "#merchant-info"]:
         el = soup.select_one(sel)
-        if el and el.get_text(strip=True):
-            vendedor = el.get_text(" ", strip=True)
+        if el:
+            blocos.append(el.get_text("\n", strip=True))
+    texto_vend = "\n".join(blocos)
+    # Ex.: "Enviado / Vendido\nSamsung Loja Oficial" ou "Enviado por\nAmazon\nVendido por\nAmazon.com.br"
+    for m in re.finditer(r"Vendido(?:\s+por)?\s*:?\s*([^\n]*)(?:\n([^\n]+))?", texto_vend, re.I):
+        valor = (m.group(1) or "").strip(" /:")
+        if not valor or norm(valor) in ("por", "/"):
+            valor = (m.group(2) or "").strip(" /:")
+        if valor and norm(valor) not in ("por", "enviado", "enviado por"):
+            vendedor = valor
             break
-    # "Enviado por Amazon Vendido por Loja X" -> fica só com quem vende ("Loja X").
-    m = re.search(r"vendido\s*(?:por)?\s*:?\s*(.+)$", vendedor, re.I | re.S)
-    if m and m.group(1).strip():
-        vendedor = m.group(1).strip()
+    if not vendedor:
+        el = soup.select_one("#sellerProfileTriggerId")
+        if el:
+            vendedor = el.get_text(" ", strip=True)
 
     cor = cor_hint
     el = soup.select_one("#variation_color_name .selection, #inline-twister-expanded-dimension-text-color_name")
@@ -528,11 +538,15 @@ def loja_mercadolivre(cfg: dict) -> tuple[list[dict], list[str]]:
                 continue
             titulo = t.get_text(" ", strip=True)
             href = link.get("href", "").split("#")[0]
-            preco_el = card.select_one(".poly-price__current, .ui-search-price__second-line, .andes-money-amount")
+            preco_el = (card.select_one(".poly-price__current")
+                        or card.select_one(".ui-search-price__second-line")
+                        or card.select_one(".andes-money-amount:not(.andes-money-amount--previous)"))
             preco = None
             if preco_el:
                 frac = preco_el.select_one(".andes-money-amount__fraction")
                 cents = preco_el.select_one(".andes-money-amount__cents")
+                if frac is None and "andes-money-amount__fraction" in (preco_el.get("class") or []):
+                    frac = preco_el
                 if frac:
                     preco = brl(frac.get_text(strip=True) + "," + (cents.get_text(strip=True) if cents else "00"))
             vend_el = card.select_one(".poly-component__seller, .ui-search-official-store-label")
@@ -792,7 +806,7 @@ def _executar(agora: datetime) -> None:
                 )
                 saude["avisado"] = True
 
-        menor = min((a["preco"] for a in validos), default=None)
+        menor = min(validos, key=lambda a: a["preco"], default=None)
         resumo.append((nome, len(s26), len(validos), menor, erros))
 
         for a in validos:
@@ -813,9 +827,11 @@ def _executar(agora: datetime) -> None:
         for nome, n_s26, n_ok, menor, erros in resumo:
             if n_s26:
                 det = f"{n_s26} anúncio(s) do S26+ lidos, {n_ok} dentro das regras"
-                if menor:
-                    det += f", menor preço {fmt_brl(menor)}"
                 linhas.append(f"✅ <b>{escape(nome)}</b>: {det}")
+                if menor:
+                    linhas.append(f"    ↳ menor: <b>{fmt_brl(menor['preco'])}</b> {escape(menor['preco_desc'])} · "
+                                  f"{escape(menor['cor'] or 'cor ?')} · {escape(menor['armazenamento'] or '?')}\n"
+                                  f"    {escape(menor['url'])}")
             else:
                 linhas.append(f"❌ <b>{escape(nome)}</b>: não consegui ler"
                               + (f" ({escape(erros[0][:80])})" if erros else ""))

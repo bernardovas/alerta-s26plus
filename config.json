@@ -46,7 +46,7 @@
     },
 
     "casasbahia": {
-      "ativo": true,
+      "ativo": false,
       "nome": "Casas Bahia",
       "vendedores_aceitos": ["samsung", "casas bahia", "casasbahia"],
       "buscas": [
