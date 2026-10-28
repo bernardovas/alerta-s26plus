@@ -767,9 +767,30 @@ def carregar_estado() -> dict:
         return {}
 
 
-def main() -> None:
+def _hora_de_enviar(agora: datetime) -> bool:
+    """A tarefa do Windows dispara a cada 30 min (e ao voltar da suspensão ou ao entrar no Windows).
+    O resumo só sai se já passou o intervalo configurado desde o último envio."""
+    ultimo = carregar_estado().get("ultimo_resumo")
+    if not ultimo:
+        return True
     try:
-        _executar(datetime.now(BRT))
+        decorrido = agora - datetime.fromisoformat(ultimo)
+    except ValueError:
+        return True
+    intervalo = timedelta(hours=float(CONFIG.get("intervalo_horas", 2))) - timedelta(minutes=15)
+    if decorrido < intervalo:
+        print(f"Último resumo há {int(decorrido.total_seconds() // 60)} min; próximo após "
+              f"{int(intervalo.total_seconds() // 60)} min. Nada a fazer agora.")
+        return False
+    return True
+
+
+def main() -> None:
+    agora = datetime.now(BRT)
+    if not TEST_MODE and not _hora_de_enviar(agora):
+        return
+    try:
+        _executar(agora)
     finally:
         fechar_navegador()
 
@@ -847,7 +868,16 @@ def _executar(agora: datetime) -> None:
                 ofertas.append((a, nome))
 
     ofertas.sort(key=lambda x: x[0]["preco"])
-    enviado = telegram(msg_resumo(agora, resumo, ofertas))
+    nenhuma_lida = all(n_s26 == 0 for _, n_s26, _, _, _ in resumo)
+    if nenhuma_lida and not TEST_MODE:
+        # Provavelmente a internet ainda não voltou (ex.: logo após sair da suspensão).
+        # Não envia e não marca o horário: tenta de novo na próxima checagem (30 min).
+        print("Nenhuma loja respondeu; tento de novo na próxima checagem.")
+        enviado = False
+    else:
+        enviado = telegram(msg_resumo(agora, resumo, ofertas))
+    if enviado:
+        estado["ultimo_resumo"] = agora.isoformat(timespec="minutes")
 
     if TEST_MODE:
         (ROOT / "diagnostico.json").write_text(json.dumps(DIAGNOSTICO, ensure_ascii=False, indent=1) + "\n",

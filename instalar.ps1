@@ -94,13 +94,36 @@ try {
     Titulo "Agendando a verificação a cada $Horas hora(s)"
     $pyw = Join-Path $Pasta ".venv\Scripts\pythonw.exe"
     $acao = New-ScheduledTaskAction -Execute $pyw -Argument "`"$Pasta\executar.pyw`"" -WorkingDirectory $Pasta
-    $gatilho = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(15) -RepetitionInterval (New-TimeSpan -Hours $Horas)
+    # A tarefa acorda a cada 30 min; o robô só manda o resumo quando já passou o intervalo.
+    # Também roda ao entrar no Windows e ao voltar da suspensão, para não perder o horário.
+    $gatilhos = @()
+    $gatilhos += New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(15) -RepetitionInterval (New-TimeSpan -Minutes 30)
+    $logon = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+    $logon.Delay = "PT2M"
+    $gatilhos += $logon
+    try {
+        $cls = Get-CimClass -ClassName MSFT_TaskEventTrigger -Namespace Root/Microsoft/Windows/TaskScheduler
+        $retomar = New-CimInstance -CimClass $cls -ClientOnly
+        $retomar.Enabled = $true
+        $retomar.Delay = "PT2M"
+        $retomar.Subscription = '<QueryList><Query Id="0" Path="System"><Select Path="System">*[System[Provider[@Name=''Microsoft-Windows-Power-Troubleshooter''] and EventID=1]]</Select></Query></QueryList>'
+        $gatilhos += $retomar
+    } catch {
+        Write-Host "Aviso: não consegui criar o gatilho de 'voltar da suspensão'; a checagem de 30 em 30 min cobre isso." -ForegroundColor Yellow
+    }
     $config = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
         -ExecutionTimeLimit (New-TimeSpan -Minutes 15) -MultipleInstances IgnoreNew
-    Register-ScheduledTask -TaskName $NomeTarefa -Action $acao -Trigger $gatilho -Settings $config `
-        -Description "Verifica o preço do Galaxy S26+ e avisa no Telegram." -Force | Out-Null
-    Write-Host "Tarefa '$NomeTarefa' criada. Ela roda enquanto você estiver logado no Windows,"
-    Write-Host "e se o PC estiver desligado na hora marcada, roda assim que ele ligar."
+    $descricao = "Verifica o preço do Galaxy S26+ e manda o resumo no Telegram."
+    try {
+        Register-ScheduledTask -TaskName $NomeTarefa -Action $acao -Trigger $gatilhos -Settings $config `
+            -Description $descricao -Force | Out-Null
+    } catch {
+        Write-Host "Aviso: gatilho de suspensão recusado pelo Windows; agendando sem ele." -ForegroundColor Yellow
+        Register-ScheduledTask -TaskName $NomeTarefa -Action $acao -Trigger $gatilhos[0..1] -Settings $config `
+            -Description $descricao -Force | Out-Null
+    }
+    Write-Host "Tarefa '$NomeTarefa' criada: resumo a cada $Horas hora(s), checando de 30 em 30 min."
+    Write-Host "Depois de suspensão ou ao ligar o PC, o resumo atrasado sai em até ~2 minutos."
 
     # 5) Teste -------------------------------------------------------------------
     Titulo "Rodando um teste agora (cerca de 1 a 2 minutos)"
